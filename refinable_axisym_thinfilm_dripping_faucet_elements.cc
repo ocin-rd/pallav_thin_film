@@ -69,6 +69,9 @@ fill_in_generic_residual_contribution_axisym_thinfilm_dripping_faucet
  // Get the Ohnesorg number
  const double ohnesorg = oh();
 
+ // Helper term
+ double H = 0.0;
+
  //Integers to store the local equation and unknown numbers
  int local_eqn_h=0, local_eqn_u=0, local_eqn_omega=0, local_unknown=0;
 
@@ -253,8 +256,14 @@ fill_in_generic_residual_contribution_axisym_thinfilm_dripping_faucet
      //If the nodal equation is not a boundary condition
      if(local_eqn_u >= 0)
       {
+        // Calculate helper term
+        H = 1.0/(interpolated_h*sqrt(1.0 + interpolated_omega*interpolated_omega)) -
+          interpolated_domegadz/pow(1.0 + interpolated_omega*interpolated_omega, 3.0/2.0);
+
        // Add contributions from the thin film model
        residuals[local_eqn_u] += (interpolated_dudt + interpolated_u*interpolated_dudz)*test(l)*W*hang_weight;
+       residuals[local_eqn_u] += (-2.0*ohnesorg*H + 3.0*ohnesorg*interpolated_dudz)*dtestdx(l,0)*W*hang_weight;
+       residuals[local_eqn_u] += body_force*test(l)*W*hang_weight;
        
        // Calculate the Jacobian
        if(flag)
@@ -323,6 +332,68 @@ fill_in_generic_residual_contribution_axisym_thinfilm_dripping_faucet
      if(local_eqn_omega >= 0)
       {
        residuals[local_eqn_omega] += (interpolated_dhdz - interpolated_omega)*test(l)*W*hang_weight;
+       
+       // Calculate the Jacobian
+       if(flag)
+        {
+         //Local variables to store the number of master nodes
+         //and the weights associated with each hanging node
+         unsigned n_master2=1; double hang_weight2=1.0;
+
+         //Loop over the nodes for the variables
+         for(unsigned l2=0;l2<n_node;l2++)
+          { 
+           //Local bool (is the node hanging)
+           bool is_node2_hanging = this->node_pt(l2)->is_hanging();
+
+           //If the node is hanging, get the number of master nodes
+           if(is_node2_hanging)
+            {
+             hang_info2_pt = this->node_pt(l2)->hanging_pt();
+             n_master2 = hang_info2_pt->nmaster();
+            }
+           //Otherwise there is one master node, the node itself
+           else
+            {
+             n_master2 = 1;
+            }
+           
+           //Loop over the master nodes
+           for(unsigned m2=0;m2<n_master2;m2++)
+            {
+             //Get the local unknown and weight
+             //If the node is hanging
+             if(is_node2_hanging)
+              {
+               //Read out the local unknown from the master node
+               local_unknown = 
+                this->local_hang_eqn(hang_info2_pt->master_node_pt(m2),
+                                     h_nodal_index);
+
+               //Read out the hanging weight from the master node
+               hang_weight2 = hang_info2_pt->master_weight(m2);
+              }
+             //If the node is not hanging
+             else
+              {
+               //The local unknown number comes from the node
+               local_unknown = this->nodal_local_eqn(l2,u_nodal_index);
+
+               //The hang weight is one
+               hang_weight2 = 1.0;
+              }
+
+             //If the unknown is not pinned
+             if(local_unknown >= 0)
+              {
+               //Add contribution to Elemental Matrix
+	             // obacht not properly implemented -- finite difference
+	             jacobian(local_eqn_h,local_unknown) += 
+		            dpsidx(l2,0)*dtestdx(l,0)*W*hang_weight*hang_weight2;
+              }
+            } //End of loop over master nodes
+          } //End of loop over nodes
+        } //End of Jacobian calculation
       } 
     } //End of loop over master nodes for residual
   } //End of loop over nodes

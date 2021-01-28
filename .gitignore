@@ -9,3 +9,7 @@
 # Ignore hidden directories/files, except .gitignore
 .*
 !/.gitignore
+# Ignore object files
+*.o
+# Ignore all directories
+*/*

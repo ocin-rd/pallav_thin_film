@@ -31,7 +31,6 @@
 
 // Generic oomph-lib routines
 #include "generic.h"
-#include "num_rec.h"
 
 // Include axisymmetric thin film DrippingFaucet elements/equations
 //#include "axisym_thinfilm_dripping_faucet_elements.h"
@@ -47,6 +46,94 @@ using namespace oomph;
 
 namespace oomph
 {
+
+//====================================================================
+/// Element to constrain the tip position and its velocity.
+//====================================================================
+template<class ELEMENT>
+class DrippingFaucetConstraintElement : public GeneralisedElement
+{
+public:
+
+  DrippingFaucetConstraintElement(const double& z_tip, const double& u_tip,
+    const Mesh* mesh_pt, const Node* tip_node_pt, const double* prescribed_drop_volume_pt)
+  {
+    // Create an internal data object, which is the unknown
+    // position of the drop tip
+    this->add_internal_data(new Data(1),true);
+    this->internal_data_pt(0)->set_value(0,z_tip);
+    // Create an internal data object, which is the unknown
+    // velocity of the drop tip
+    this->add_internal_data(new Data(1),true);
+    this->internal_data_pt(1)->set_value(0,u_tip);
+
+    // Set pointer to the mesh
+    Mesh_pt = mesh_pt;
+    // Set pointer to the tip node
+    Tip_node_pt = tip_node_pt;
+    // Set pointer to prescribed drop volume
+    Prescribed_drop_volume_pt = prescribed_drop_volume_pt;
+
+    // Add external data
+    const unsigned n_node = Mesh_pt->nnode();
+    for (unsigned inod=0; inod < n_node; inod++)
+    {
+      this->add_external_data(Mesh_pt->node_pt(inod), true);
+    }
+  }
+
+  ~DrippingFaucetConstraintElement(){}
+
+  double calculate_drop_volume()
+  {
+    // get the volume from the elements
+    double volume = 0.0;
+    unsigned n_element=Mesh_pt->nelement();
+    for(unsigned el=0; el<n_element; el++)
+    {
+      // Get pointer to element
+      ELEMENT *el_pt = dynamic_cast<ELEMENT*>(Mesh_pt->element_pt(el));
+    
+      // Add its contribution
+      volume += el_pt->compute_physical_size();
+    }
+    return volume;
+  }
+
+  void fill_in_contribution_to_residuals(Vector<double>& residuals)
+  {
+    // Get the current velocity of the tip
+    const double current_u_tip = Tip_node_pt->dposition_dt(0);
+
+    // Get the current volume of the drop
+    const double current_drop_volume = calculate_drop_volume();
+
+    // Equation for tip position
+    const int z_tip_eqn=internal_local_eqn(0,0);
+
+    // Equation for tip velocity
+    const int u_tip_eqn=internal_local_eqn(1,0);
+
+    if(z_tip_eqn >= 0)
+    {
+      // Get the residuals
+      residuals[z_tip_eqn] += current_drop_volume - *Prescribed_drop_volume_pt;
+    }
+
+    if(u_tip_eqn >= 0)
+    {
+      // Get the residuals
+      residuals[u_tip_eqn] += current_u_tip - this->internal_data_pt(1)->value(0);
+    }
+  }
+
+private:
+
+  const Mesh* Mesh_pt;
+  const Node* Tip_node_pt;
+  const double* Prescribed_drop_volume_pt;
+};
+
 //==start_of_namespace================================================
 /// Namespace for problem parameters
 //====================================================================
@@ -57,8 +144,22 @@ namespace Problem_Parameter
 
  DocInfo Doc_info;
 
- /// Initial length
- double L_start = 1.0;
+ /// Faucet Radius
+ double R = 1.0;
+
+ /// Initial tip position
+ double Z_tip = 1.0;
+ Data* Tip_position_pt = 0;
+
+ /// Pointer to the tip node
+ Node* Tip_node_pt = 0;
+
+ /// Initial tip velocity
+ double U_tip = 0.0;
+ Data* Tip_velocity_pt = 0;
+
+ /// Magnitude of the slope at the tip
+ double Slope_magn = 10000.0;
 
  /// Ohnesorg number
  double Oh = 1.0;
@@ -66,36 +167,39 @@ namespace Problem_Parameter
  /// Weber number
  double We = 1.0;
 
+ /// Gravitational term
+ double G = 1.0;
+
  /// Body force function
  void body_force_function(const double& time, double& force)
  {
-  force=-1.0;
+  force=-G;
  }
  // The initial profile h(z)
  double initial_profile(const double& z)
   {
-   if(z <= 1.0)
-    {
-     return cos(MathematicalConstants::Pi*z);
-    }
-   else
-    {
-     return 0.0;
-    }
+   return R*sqrt(Slope_magn/(Slope_magn*Z_tip - R))*
+    sqrt(Z_tip - z + R*R/(4.0*Slope_magn*(Slope_magn*Z_tip - R))) -
+    R*R/(2.0*(Slope_magn*Z_tip - R));
   }
 
  // The initial slope dhdz(z)
  double initial_slope(const double& z)
   {
-   if(z <= 1.0)
-    {
-     return -MathematicalConstants::Pi*sin(MathematicalConstants::Pi*z);
-    }
-   else
-    {
-     return 0.0;
-    }
+   return -R/2.0*sqrt(Slope_magn/(Slope_magn*Z_tip - R))/
+    sqrt(Z_tip - z + R*R/(4.0*Slope_magn*(Slope_magn*Z_tip - R)));
   }
+
+  /// Initial drop volume
+  double V_0 = 0.0;
+
+  /// Function for the current volume
+  double drop_volume(const double& t)
+  {
+    return V_0 + MathematicalConstants::Pi*R*R*sqrt(We)*t;
+  }
+
+  double Prescribed_drop_volume = 0.0;
 
   /// Trace file
   ofstream Trace_file;
@@ -122,14 +226,66 @@ public:
  /// Destructor (empty)
  ~AxisymmetricThinFilmDrippingFaucetProblem()
   {
-   delete mesh_pt();
+    delete Constraint_element_pt->internal_data_pt(0);
+    delete Constraint_element_pt->internal_data_pt(1);
+    delete Constraint_element_pt;
+    delete Constraint_mesh_pt;
+
+    delete Fluid_mesh_pt->spatial_error_estimator_pt();
+    delete Fluid_mesh_pt;
+
+    delete this->time_stepper_pt();
   }
+
+ /// Actions before Newton convergence check
+ void actions_before_newton_convergence_check()
+ {
+   Problem_Parameter::Tip_node_pt->x(0) = Problem_Parameter::Tip_position_pt->value(0);
+   Problem_Parameter::Tip_node_pt->set_value(1, Problem_Parameter::Tip_velocity_pt->value(0));
+ }
+
+ /// \short Actions before implicit timestep: Update the target volume
+ void actions_before_implicit_timestep()
+ {
+   // Current time
+   const double t = time_stepper_pt()->time();
+
+   Problem_Parameter::Prescribed_drop_volume = Problem_Parameter::drop_volume(t);
+ }
 
  /// Update the problem specs before solve (empty)
  void actions_before_newton_solve(){}
 
  /// Update the problem specs after solve (empty)
  void actions_after_newton_solve(){}
+
+ /// \short Global error norm for adaptive timestepping
+ double global_temporal_error_norm()
+ {
+    double global_error = 0.0;
+    unsigned count=0;
+    unsigned num_nod = Fluid_mesh_pt->nnode();
+    for (unsigned inod = 0; inod < num_nod; inod++)
+    {
+      // Get node
+      Node* nod_pt=Fluid_mesh_pt->node_pt(inod);
+       
+      // Error based on velocity
+      double err=nod_pt->time_stepper_pt()->temporal_error_in_value(nod_pt,1);
+       
+      // Add the square of the individual error to the global error
+      count++;
+      global_error += err*err;
+    }
+
+    // Divide by the number of nodes
+    global_error /= double(count);
+     
+    // Return square root...
+    global_error=sqrt(global_error);
+
+    return global_error;
+  }
 
  /// \short Doc the solution, pass the number of the case considered,
  /// so that output files can be distinguished.
@@ -139,6 +295,12 @@ private:
 
  /// Mesh pointer
  RefineableOneDMesh<ELEMENT>* Fluid_mesh_pt;
+
+ /// Constraint element
+ DrippingFaucetConstraintElement<ELEMENT>* Constraint_element_pt;
+
+ /// Constraint mesh
+ Mesh* Constraint_mesh_pt;
 
  /// Pointer to body force function
  AxisymmetricThinFilmDrippingFaucetEquations::AxisymmetricThinFilmDrippingFaucetBodyForceFctPt Body_force_fct_pt;
@@ -164,14 +326,14 @@ AxisymmetricThinFilmDrippingFaucetProblem<ELEMENT>::AxisymmetricThinFilmDripping
  this->add_time_stepper_pt(new BDF<2>(false));
  oomph_info << "Using BDF2\n";
 
- //linear_solver_pt()=new FD_LU;
+ linear_solver_pt()=new FD_LU;
  Max_residuals = 1.0e4;
  Max_newton_iterations=20;
  //Newton_solver_tolerance = 1.0e-6;
  //enable_globally_convergent_newton_method();
 
  // Build mesh and store pointer in Problem
- Fluid_mesh_pt = new RefineableOneDMesh<ELEMENT>(n_element,Problem_Parameter::L_start,
+ Fluid_mesh_pt = new RefineableOneDMesh<ELEMENT>(n_element,Problem_Parameter::Z_tip,
 						 this->time_stepper_pt());
 
  // Create/set error estimator
@@ -181,30 +343,44 @@ AxisymmetricThinFilmDrippingFaucetProblem<ELEMENT>::AxisymmetricThinFilmDripping
  Fluid_mesh_pt->max_permitted_error()=5.0e-6;
  Fluid_mesh_pt->min_permitted_error()=1.0e-6;
 
- Problem::mesh_pt() = Fluid_mesh_pt;
+ // Set the tip node
+ Problem_Parameter::Tip_node_pt = dynamic_cast<Node*>(Fluid_mesh_pt->boundary_node_pt(1,0));
+
+ /// Create mesh for contraints
+ Constraint_mesh_pt = new Mesh();
+
+ /// Create constraint element
+ Constraint_element_pt = new DrippingFaucetConstraintElement<ELEMENT>(Problem_Parameter::Z_tip,
+  Problem_Parameter::U_tip, Fluid_mesh_pt, Problem_Parameter::Tip_node_pt,
+  &Problem_Parameter::Prescribed_drop_volume);
+ // Set pointer to position and velocity data to allow external access
+ Problem_Parameter::Tip_position_pt = Constraint_element_pt->internal_data_pt(0);
+ Problem_Parameter::Tip_velocity_pt = Constraint_element_pt->internal_data_pt(1);
+ // Add element to mesh
+ Constraint_mesh_pt->add_element_pt(Constraint_element_pt);
 
  // Set the boundary conditions for this problem: By default, all nodal
  // values are free -- we only need to pin the ones that have 
- // Dirichlet conditions. 
-
- // Pin the single nodal value at the single node on mesh 
- // boundary 0 (= the left domain boundary at x=0)
- //mesh_pt()->boundary_node_pt(0,0)->pin(0);
- 
- // Pin the single nodal value at the single node on mesh 
- // boundary 1 (= the right domain boundary at x=1)
- //mesh_pt()->boundary_node_pt(1,0)->pin(0);
+ // Dirichlet conditions.
+ Fluid_mesh_pt->boundary_node_pt(0,0)->pin(0);
+ Fluid_mesh_pt->boundary_node_pt(0,0)->set_value(0, Problem_Parameter::R);
  Fluid_mesh_pt->boundary_node_pt(0,0)->pin(1);
- Fluid_mesh_pt->boundary_node_pt(0,0)->set_value(1, 0.0);
- Fluid_mesh_pt->boundary_node_pt(1,0)->pin(0);
- Fluid_mesh_pt->boundary_node_pt(1,0)->set_value(0, 0.0);
+ Fluid_mesh_pt->boundary_node_pt(0,0)->set_value(1, sqrt(Problem_Parameter::We));
+
+ Problem_Parameter::Tip_node_pt->x(0) = Problem_Parameter::Tip_position_pt->value(0);
+ Problem_Parameter::Tip_node_pt->pin(0);
+ Problem_Parameter::Tip_node_pt->set_value(0, 0.0);
+ Problem_Parameter::Tip_node_pt->pin(1);
+ Problem_Parameter::Tip_node_pt->set_value(1, Problem_Parameter::Tip_velocity_pt->value(0));
+ Problem_Parameter::Tip_node_pt->pin(2);
+ Problem_Parameter::Tip_node_pt->set_value(2, -Problem_Parameter::Slope_magn);
 
  // Set the initial condition
- unsigned n_node = mesh_pt()->nnode();
+ unsigned n_node = Fluid_mesh_pt->nnode();
  for(unsigned inod=0;inod<n_node;inod++)
   {
    // Get pointer to node
-   Node* nod_pt = dynamic_cast<Node*>(mesh_pt()->node_pt(inod));
+   Node* nod_pt = dynamic_cast<Node*>(Fluid_mesh_pt->node_pt(inod));
    double z=nod_pt->x(0);
    double h=Problem_Parameter::initial_profile(z);
    nod_pt->set_value(0,h);
@@ -216,17 +392,27 @@ AxisymmetricThinFilmDrippingFaucetProblem<ELEMENT>::AxisymmetricThinFilmDripping
 
  // Loop over elements and set pointers to DrippingFaucet number 
  // and body force function
+ // Compute the initial drop volume based on the initial shape
+ Problem_Parameter::V_0=0.0;
  for(unsigned i=0;i<n_element;i++)
   {
    // Upcast from GeneralisedElement to the present element
-   ELEMENT *elem_pt = dynamic_cast<ELEMENT*>(mesh_pt()->element_pt(i));
+   ELEMENT *elem_pt = dynamic_cast<ELEMENT*>(Fluid_mesh_pt->element_pt(i));
    
    // Set the DrippingFaucet number
    elem_pt->oh_pt() = &Problem_Parameter::Oh;
 
    //Set the body force function pointer
    elem_pt->body_force_fct_pt() = Body_force_fct_pt;
+
+   Problem_Parameter::V_0 += elem_pt->compute_physical_size();
   }
+  Problem_Parameter::Prescribed_drop_volume = Problem_Parameter::V_0;
+
+ // Combine meshes
+ add_sub_mesh(Fluid_mesh_pt);
+ add_sub_mesh(Constraint_mesh_pt);
+ build_global_mesh();
 
  // Setup equation numbering scheme
  oomph_info << "Number of equations: " << assign_eqn_numbers() << std::endl;
@@ -271,7 +457,8 @@ void AxisymmetricThinFilmDrippingFaucetProblem<ELEMENT>::doc_solution()
  // Write trace file
  Problem_Parameter::Trace_file
    << this->time_pt()->time() << " "
-   << Fluid_mesh_pt->boundary_node_pt(0,0)->value(0) << " "
+   << Problem_Parameter::Tip_node_pt->x(0) << " "
+   << Problem_Parameter::Tip_node_pt->value(1) << " "
    << current_vol << " "
    << Fluid_mesh_pt->nelement() << " "
    << Problem_Parameter::Doc_info.number() << " "
@@ -297,6 +484,11 @@ int main(int argc, char **argv)
 
  // Store command line arguments
  CommandLineArgs::setup(argc,argv);
+ 
+ // Sometimes the Newton method produces inverted elements while
+ // it's iterating towards a solution with non-inverted elements:
+ // accept these!
+ FiniteElement::Accept_negative_jacobian = true;
 
  // Define possible command line arguments and parse the ones that
  // were actually specified
@@ -358,10 +550,11 @@ int main(int argc, char **argv)
  Problem_Parameter::Trace_file  
   << "VARIABLES="
   << "\"time\", "  // 1
-  << "\"height\"," // 2
-  << "\"volume\"," // 3
-  << "\"n_element\"," // 4
-  << "\"doc number\"" // 5
+  << "\"z_tip\"," // 2
+  << "\"u_tip\"," // 3
+  << "\"volume\"," // 4
+  << "\"n_element\"," // 5
+  << "\"doc number\"" // 6
   << std::endl; 
 
  // Output directory
@@ -374,7 +567,7 @@ int main(int argc, char **argv)
  problem.assign_initial_values_impulsive();
 
  // Refine problem uniformly 4 times (to check automatic unrefinement)
- for(unsigned i=0;i<3;i++) { problem.refine_uniformly(); }
+ //for(unsigned i=0;i<3;i++) { problem.refine_uniformly(); }
 
  //Output initial condition
  problem.doc_solution();

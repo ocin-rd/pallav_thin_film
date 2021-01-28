@@ -527,11 +527,12 @@ public:
     const double J = J_eulerian(s);
      
     // The integrand at the current integration point is r h
-    result += interpolated_x(s,0)*interpolated_h_axisym_thinfilm_dripping_faucet(s)*w*J;
+    result += interpolated_h_axisym_thinfilm_dripping_faucet(s)*
+      interpolated_h_axisym_thinfilm_dripping_faucet(s)*w*J;
    }
 
-  // Multiply by 2pi (integrating in azimuthal direction)
-  return (2.0*MathematicalConstants::Pi*result);
+  // Multiply by pi (integrating in azimuthal direction)
+  return (MathematicalConstants::Pi*result);
  }
 
 

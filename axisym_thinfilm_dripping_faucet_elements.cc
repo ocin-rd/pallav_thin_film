@@ -40,7 +40,7 @@ namespace oomph
 /// in every case (h, u, \omega)
 //======================================================================
  template<unsigned NNODE_1D>
- const unsigned AxisymmetricThinFilmDrippingFaucetElement<NNODE_1D>::Initial_Nvalue = 2;
+ const unsigned AxisymmetricThinFilmDrippingFaucetElement<NNODE_1D>::Initial_Nvalue = 3;
 
   double AxisymmetricThinFilmDrippingFaucetEquations::
   Default_Physical_Constant_Value = 0.0;
@@ -84,6 +84,9 @@ fill_in_generic_residual_contribution_axisym_thinfilm_dripping_faucet
 
  // Get the Ohnesorg number
  const double ohnesorg = oh();
+
+ // Helper term
+ double H = 0.0;
 
  //Integers to store the local equation and unknown numbers
  int local_eqn=0, local_unknown=0;
@@ -150,9 +153,14 @@ fill_in_generic_residual_contribution_axisym_thinfilm_dripping_faucet
      // IF it's not a boundary condition
      if(local_eqn >= 0)
       {
+        // Calculate helper term
+        H = 1.0/(interpolated_h*sqrt(1.0 + interpolated_omega*interpolated_omega)) -
+          interpolated_domegadz/pow(1.0 + interpolated_omega*interpolated_omega, 3.0/2.0);
+
        // Add contributions from the thin film model
-       residuals[local_eqn] += (interpolated_dhdt + interpolated_u*interpolated_omega +
-                                interpolated_h/2.0*interpolated_dudz)*test(l)*W;
+       residuals[local_eqn] += (interpolated_dudt + interpolated_u*interpolated_dudz)*test(l)*W;
+       residuals[local_eqn] += (-2.0*ohnesorg*H + 3.0*ohnesorg*interpolated_dudz)*dtestdx(l,0)*W;
+       residuals[local_eqn] += body_force*test(l)*W;
 
        // Calculate the jacobian (currently not implemented)
        //-----------------------
@@ -204,6 +212,23 @@ fill_in_generic_residual_contribution_axisym_thinfilm_dripping_faucet
       if(local_eqn >= 0)
        {
         residuals[local_eqn] += (interpolated_dhdz - interpolated_omega)*test(l)*W;
+
+       // Calculate the jacobian (currently not implemented)
+       //-----------------------
+       if(flag)
+        {
+         //Loop over the height shape functions again
+         for(unsigned l2=0;l2<n_node;l2++)
+          { 
+           local_unknown = nodal_local_eqn(l2,h_nodal_index);
+           //If at a non-zero degree of freedom add in the entry
+           if(local_unknown >= 0)
+            {
+             //Add contribution to Elemental Matrix
+	           jacobian(local_eqn, local_unknown) += 0.0*psi(l2)*test(l)*W;
+            }
+          }
+        }
        }
     }
 

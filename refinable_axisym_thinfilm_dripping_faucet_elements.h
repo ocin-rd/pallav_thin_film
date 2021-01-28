@@ -82,7 +82,7 @@ class RefineableAxisymmetricThinFilmDrippingFaucetEquations :
   }
  
  /// Number of 'flux' terms for Z2 error estimation 
- unsigned num_Z2_flux_terms() {return 1;}
+ unsigned num_Z2_flux_terms() {return 2;}
 
  /// Get 'flux' for Z2 error recovery:  Standard flux from axisym thin film equations
  void get_Z2_flux(const Vector<double>& s, Vector<double>& flux)
@@ -234,8 +234,8 @@ template <unsigned NNODE_1D>
    BrokenCopy::broken_assign("RefineableAxisymmetricThinFilmDrippingFaucetElement");
   }
  
- /// Number of continuously interpolated values: 2
- unsigned ncont_interpolated_values() const {return 2;}
+ /// Number of continuously interpolated values: 3
+ unsigned ncont_interpolated_values() const {return 3;}
 
  /// \short Number of vertex nodes in the element
  unsigned nvertex_node() const
