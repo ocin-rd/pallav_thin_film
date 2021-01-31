@@ -47,6 +47,79 @@ using namespace oomph;
 namespace oomph
 {
 
+//=================================================================
+/// Custom element that allows the handling of external data
+//=================================================================
+template <unsigned NNODE_1D>
+class MyRefinableElement : public 
+  RefineableAxisymmetricThinFilmDrippingFaucetElement<NNODE_1D>
+{
+
+public:
+ 
+ ///\short Compute the element's residual vector and the Jacobian matrix.
+ /// Jacobian is computed by finite-differencing.
+ void fill_in_contribution_to_jacobian(Vector<double> &residuals,
+                                       DenseMatrix<double> &jacobian)
+  {
+   //Add the contribution to the residuals
+   this->fill_in_contribution_to_residuals(residuals);
+   
+   //Allocate storage for the full residuals (residuals of entire element)
+   unsigned n_dof = this->ndof();
+   Vector<double> full_residuals(n_dof);
+
+   //Get the residuals for the entire element
+   this->get_residuals(full_residuals);
+
+   //There could be internal data
+   //(finite-difference the lot by default)
+   this->fill_in_jacobian_from_internal_by_fd(full_residuals,jacobian,true);
+
+   //There could also be external data
+   //(finite-difference the lot by default)
+   this->fill_in_jacobian_from_external_by_fd(full_residuals,jacobian,true);
+
+   //There could also be nodal data
+   //(finite-difference the lot by default)
+   this->fill_in_jacobian_from_nodal_by_fd(full_residuals,jacobian);
+  }
+
+ inline void update_in_external_fd(const unsigned &i)
+  {
+   //oomph_info << "Aloha!"<<std::endl;
+   if(this->external_data_pt(0) != 0 &&
+    this->external_data_pt(1) != 0)
+    {
+     // Get the current tip position
+     double z_tip = this->external_data_pt(0)->value(0);
+     // Get the current tip velocity
+     double u_tip = this->external_data_pt(1)->value(0);
+     // Loop over all nodes
+     unsigned n_node = this->nnode();
+     for(unsigned inod=0; inod<n_node; inod++)
+      {
+       Node* nod_pt = this->node_pt(inod);
+       // Only update the tip node where the velocity is pinned
+       if(nod_pt->is_pinned(1))
+        {
+         //oomph_info << "Updating position!"<<std::endl;
+         nod_pt->x(0) = z_tip;
+         //oomph_info << "Updating velocity!"<<std::endl;
+         nod_pt->set_value(1,u_tip);
+        }
+      }
+    }
+  }
+
+ inline void update_before_external_fd()
+  {
+   const unsigned i=0;
+   update_in_external_fd(i);
+  }
+
+};
+
 //====================================================================
 /// Element to constrain the tip position and its velocity.
 //====================================================================
@@ -56,7 +129,7 @@ class DrippingFaucetConstraintElement : public GeneralisedElement
 public:
 
   DrippingFaucetConstraintElement(const double& z_tip, const double& u_tip,
-    const Mesh* mesh_pt, const Node* tip_node_pt, const double* prescribed_drop_volume_pt)
+    const Mesh* mesh_pt, Node* tip_node_pt, const double* prescribed_drop_volume_pt)
   {
     // Create an internal data object, which is the unknown
     // position of the drop tip
@@ -127,10 +200,28 @@ public:
     }
   }
 
+ inline void update_in_internal_fd(const unsigned &i)
+  {
+    // Get the current tip position
+    double z_tip = this->internal_data_pt(0)->value(0);
+    // Get the current tip velocity
+    double u_tip = this->internal_data_pt(1)->value(0);
+    //oomph_info << "Updating position!"<<std::endl;
+    Tip_node_pt->x(0) = z_tip;
+    //oomph_info << "Updating velocity!"<<std::endl;
+    Tip_node_pt->set_value(1,u_tip);
+  }
+
+ inline void update_before_internal_fd()
+  {
+   const unsigned i=0;
+   update_in_internal_fd(i);
+  }
+
 private:
 
   const Mesh* Mesh_pt;
-  const Node* Tip_node_pt;
+  Node* Tip_node_pt;
   const double* Prescribed_drop_volume_pt;
 };
 
@@ -326,7 +417,7 @@ AxisymmetricThinFilmDrippingFaucetProblem<ELEMENT>::AxisymmetricThinFilmDripping
  this->add_time_stepper_pt(new BDF<2>(false));
  oomph_info << "Using BDF2\n";
 
- linear_solver_pt()=new FD_LU;
+ //linear_solver_pt()=new FD_LU;
  Max_residuals = 1.0e4;
  Max_newton_iterations=20;
  //Newton_solver_tolerance = 1.0e-6;
@@ -406,6 +497,20 @@ AxisymmetricThinFilmDrippingFaucetProblem<ELEMENT>::AxisymmetricThinFilmDripping
    elem_pt->body_force_fct_pt() = Body_force_fct_pt;
 
    Problem_Parameter::V_0 += elem_pt->compute_physical_size();
+
+   // Find the element that contains the tip node and add
+   // external data
+   // Loop over all nodes
+   unsigned n_node = elem_pt->nnode();
+   for(unsigned inod=0; inod<n_node; inod++)
+    {
+      Node* nod_pt = elem_pt->node_pt(inod);
+      if (nod_pt == Problem_Parameter::Tip_node_pt)
+      {
+        elem_pt->add_external_data(Problem_Parameter::Tip_position_pt);
+        elem_pt->add_external_data(Problem_Parameter::Tip_velocity_pt);
+      }
+    }
   }
   Problem_Parameter::Prescribed_drop_volume = Problem_Parameter::V_0;
 
@@ -527,7 +632,7 @@ int main(int argc, char **argv)
 
  // Set up the problem: 
  // Solve a 1D axisymmetric thin film DrippingFaucet problem using a body force
- AxisymmetricThinFilmDrippingFaucetProblem<RefineableAxisymmetricThinFilmDrippingFaucetElement<4> >
+ AxisymmetricThinFilmDrippingFaucetProblem<MyRefinableElement<4> >
    //Element type as template parameter
    problem(n_element,Problem_Parameter::body_force_function);
 
