@@ -85,8 +85,8 @@ fill_in_generic_residual_contribution_axisym_thinfilm_dripping_faucet
  // Get the Ohnesorg number
  const double ohnesorg = oh();
 
- // Helper term
- double H = 0.0;
+ // Curvature term
+ double curvature = 0.0;
 
  //Integers to store the local equation and unknown numbers
  int local_eqn=0, local_unknown=0;
@@ -153,13 +153,13 @@ fill_in_generic_residual_contribution_axisym_thinfilm_dripping_faucet
      // IF it's not a boundary condition
      if(local_eqn >= 0)
       {
-        // Calculate helper term
-        H = 1.0/(interpolated_h*sqrt(1.0 + interpolated_omega*interpolated_omega)) -
+        // Calculate curvature term
+        curvature = 1.0/(interpolated_h*sqrt(1.0 + interpolated_omega*interpolated_omega)) -
           interpolated_domegadz/pow(1.0 + interpolated_omega*interpolated_omega, 3.0/2.0);
 
        // Add contributions from the thin film model
        residuals[local_eqn] += (interpolated_dudt + interpolated_u*interpolated_dudz)*test(l)*W;
-       residuals[local_eqn] += (-2.0*ohnesorg*H + 3.0*ohnesorg*interpolated_dudz)*dtestdx(l,0)*W;
+       residuals[local_eqn] += (-ohnesorg*curvature + 3.0*ohnesorg*interpolated_dudz)*dtestdx(l,0)*W;
        residuals[local_eqn] += body_force*test(l)*W;
 
        // Calculate the jacobian (currently not implemented)

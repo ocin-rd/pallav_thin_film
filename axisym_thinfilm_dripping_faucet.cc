@@ -258,13 +258,13 @@ namespace Problem_Parameter
  /// Weber number
  double We = 1.0;
 
- /// Gravitational term
- double G = 1.0;
+ /// Bond number
+ double Bo = 1.0;
 
  /// Body force function
  void body_force_function(const double& time, double& force)
  {
-  force=-G;
+  force=Bo;
  }
  // The initial profile h(z)
  double initial_profile(const double& z)
@@ -623,6 +623,9 @@ int main(int argc, char **argv)
 
  // Weber number
  CommandLineArgs::specify_command_line_flag("--we",&Problem_Parameter::We);
+
+ // Bond number
+ CommandLineArgs::specify_command_line_flag("--bo",&Problem_Parameter::Bo);
 
  // Parse command line
  CommandLineArgs::parse_and_assign(); 
