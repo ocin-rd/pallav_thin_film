@@ -535,7 +535,7 @@ AxisymmetricThinFilmDrippingFaucetProblem<ELEMENT>::AxisymmetricThinFilmDripping
  // Allocate the timestepper -- this constructs the Problem's 
  // time object with a sufficient amount of storage to store the
  // previous timsteps.
- this->add_time_stepper_pt(new BDF<2>(false));
+ this->add_time_stepper_pt(new BDF<2>(true));
  oomph_info << "Using BDF2\n";
 
  //linear_solver_pt()=new FD_LU;
@@ -684,6 +684,10 @@ int main(int argc, char **argv)
  // Bond number
  CommandLineArgs::specify_command_line_flag("--bo",&Problem_Parameter::Bo);
 
+ // Tolerance for adaptive timestepping
+ double epsilon_t = 1.0e-3;
+ CommandLineArgs::specify_command_line_flag("--epsilon_t",&epsilon_t);
+
  // Parse command line
  CommandLineArgs::parse_and_assign(); 
  
@@ -744,6 +748,7 @@ int main(int argc, char **argv)
    problem.doc_solution();
   }
 
+ double next_dt=dt;
  while(problem.time_pt()->time() < t_max)
   {
    // Adapt?
@@ -754,7 +759,9 @@ int main(int argc, char **argv)
 		<< Problem_Parameter::Doc_info.number() << std::endl;
      problem.adapt();
     }
-   problem.unsteady_newton_solve(dt);
+   next_dt = problem.adaptive_unsteady_newton_solve(dt, epsilon_t);
+   oomph_info << "Suggested next dt: " << next_dt << std::endl;
+   dt = next_dt;
    problem.doc_solution();
   }
 } // end of main
