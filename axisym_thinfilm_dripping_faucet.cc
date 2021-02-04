@@ -269,16 +269,20 @@ namespace Problem_Parameter
  // The initial profile h(z)
  double initial_profile(const double& z)
   {
-   return R*sqrt(Slope_magn/(Slope_magn*Z_tip - R))*
-    sqrt(Z_tip - z + R*R/(4.0*Slope_magn*(Slope_magn*Z_tip - R))) -
-    R*R/(2.0*(Slope_magn*Z_tip - R));
+   return R*sqrt(1.0-(z/Z_tip)*(z/Z_tip));
   }
 
  // The initial slope dhdz(z)
  double initial_slope(const double& z)
   {
-   return -R/2.0*sqrt(Slope_magn/(Slope_magn*Z_tip - R))/
-    sqrt(Z_tip - z + R*R/(4.0*Slope_magn*(Slope_magn*Z_tip - R)));
+    if (std::fabs(z - Z_tip) > 1.0e-8)
+    {
+      return -R/(Z_tip*Z_tip*sqrt(1.0-(z/Z_tip)*(z/Z_tip)))*z;
+    }
+    else
+    {
+      return -Slope_magn;
+    }
   }
 
   /// Initial drop volume
