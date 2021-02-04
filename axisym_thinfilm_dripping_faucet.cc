@@ -664,7 +664,7 @@ int main(int argc, char **argv)
    "--dir", &Problem_Parameter::Directory);
 
  // Constant timestep
- double dt=0.01;
+ double dt=1.0e-6;
  CommandLineArgs::specify_command_line_flag("--dt", &dt);
 
  // Do timestepping until tmax

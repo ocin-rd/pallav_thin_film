@@ -185,10 +185,11 @@ fill_in_generic_residual_contribution_axisym_thinfilm_dripping_faucet
           interpolated_domegadz/pow(1.0 + interpolated_omega*interpolated_omega, 3.0/2.0);
 
        // Add contributions from the thin film model
-       residuals[local_eqn] += (interpolated_dudt + interpolated_u*interpolated_dudz)*test(l)*W;
-       residuals[local_eqn] += (-ohnesorg*curvature + 3.0*ohnesorg*interpolated_dudz)*dtestdx(l,0)*W;
-       residuals[local_eqn] += (-6.0*ohnesorg*1.0/interpolated_h*interpolated_omega*interpolated_dudz)*test(l)*W;
-       residuals[local_eqn] += body_force*test(l)*W;
+       residuals[local_eqn] += (interpolated_h*interpolated_dudt + interpolated_h*interpolated_u*interpolated_dudz)*test(l)*W;
+       residuals[local_eqn] += (-interpolated_h*ohnesorg*curvature + interpolated_h*3.0*ohnesorg*interpolated_dudz)*dtestdx(l,0)*W;
+       residuals[local_eqn] += (-6.0*ohnesorg*interpolated_omega*interpolated_dudz - ohnesorg*curvature*interpolated_omega)*test(l)*W;
+       residuals[local_eqn] += 3.0*ohnesorg*interpolated_omega*interpolated_dudz*test(l)*W;
+       residuals[local_eqn] += interpolated_h*body_force*test(l)*W;
 
        // Calculate the jacobian (currently not implemented)
        //-----------------------
