@@ -577,6 +577,7 @@ AxisymmetricThinFilmDrippingFaucetProblem<ELEMENT>::AxisymmetricThinFilmDripping
    double z=nod_pt->x(0);
    double h=Problem_Parameter::initial_profile(z);
    nod_pt->set_value(0,h);
+   nod_pt->set_value(1,0.0);
    double dhdz=Problem_Parameter::initial_slope(z);
    nod_pt->set_value(2,dhdz);
   }
