@@ -115,6 +115,7 @@ fill_in_generic_residual_contribution_axisym_thinfilm_dripping_faucet
    double interpolated_domegadz=0.0;
    double interpolated_dhdt=0.0;
    double interpolated_dudt=0.0;
+   double interpolated_mesh_velocity=0.0;
    
    //Calculate function value and derivatives:
    //-----------------------------------------
@@ -134,8 +135,12 @@ fill_in_generic_residual_contribution_axisym_thinfilm_dripping_faucet
      interpolated_domegadz += omega_value*dpsidx(l,0);
      interpolated_dhdt += dh_dt_axisym_thinfilm_dripping_faucet(l)*psi(l);
      interpolated_dudt += du_dt_axisym_thinfilm_dripping_faucet(l)*psi(l);
+     interpolated_mesh_velocity += this->dnodal_position_dt(l,0)*psi(l);
     }
 
+   // Subtract mesh velocity from dh_dt and du_dt
+   interpolated_dudt -= interpolated_mesh_velocity*interpolated_dudz;
+   interpolated_dhdt -= interpolated_mesh_velocity*interpolated_omega;
 
    //Get body force function
    //-------------------
