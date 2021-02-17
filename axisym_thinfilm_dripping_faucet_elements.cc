@@ -139,8 +139,8 @@ fill_in_generic_residual_contribution_axisym_thinfilm_dripping_faucet
     }
 
    // Subtract mesh velocity from dh_dt and du_dt
-   //interpolated_dudt -= interpolated_mesh_velocity*interpolated_dudz;
-   //interpolated_dhdt -= interpolated_mesh_velocity*interpolated_omega;
+   interpolated_dudt -= interpolated_mesh_velocity*interpolated_dudz;
+   interpolated_dhdt -= interpolated_mesh_velocity*interpolated_omega;
 
    //Get body force function
    //-------------------
@@ -158,9 +158,16 @@ fill_in_generic_residual_contribution_axisym_thinfilm_dripping_faucet
      // IF it's not a boundary condition
      if(local_eqn >= 0)
       {
+        // Calculate curvature term
+        curvature = 1.0/(interpolated_h*sqrt(1.0 + interpolated_omega*interpolated_omega)) -
+          interpolated_domegadz/pow(1.0 + interpolated_omega*interpolated_omega, 3.0/2.0);
+
        // Add contributions from the thin film model
-       residuals[local_eqn] += (interpolated_dhdt + interpolated_u*interpolated_omega +
-                                interpolated_h/2.0*interpolated_dudz)*test(l)*W;
+       residuals[local_eqn] += (interpolated_h*interpolated_dudt + interpolated_h*interpolated_u*interpolated_dudz)*test(l)*W;
+       residuals[local_eqn] += (-interpolated_h*curvature + interpolated_h*3.0*ohnesorg*interpolated_dudz)*dtestdx(l,0)*W;
+       residuals[local_eqn] += (-6.0*ohnesorg*interpolated_omega*interpolated_dudz - curvature*interpolated_omega)*test(l)*W;
+       residuals[local_eqn] += 3.0*ohnesorg*interpolated_omega*interpolated_dudz*test(l)*W;
+       residuals[local_eqn] += -interpolated_h*body_force*test(l)*W;
 
        // Calculate the jacobian (currently not implemented)
        //-----------------------
@@ -185,21 +192,10 @@ fill_in_generic_residual_contribution_axisym_thinfilm_dripping_faucet
      // IF it's not a boundary condition
      if(local_eqn >= 0)
       {
-        // Calculate curvature term
-        curvature = 1.0/(interpolated_h*sqrt(1.0 + interpolated_omega*interpolated_omega)) -
-          interpolated_domegadz/pow(1.0 + interpolated_omega*interpolated_omega, 3.0/2.0);
-
        // Add contributions from the thin film model
-       residuals[local_eqn] += (interpolated_h*interpolated_dudt + interpolated_h*interpolated_u*interpolated_dudz)*test(l)*W;
-       residuals[local_eqn] += (-interpolated_h*curvature + interpolated_h*3.0*ohnesorg*interpolated_dudz)*dtestdx(l,0)*W;
-       residuals[local_eqn] += (-6.0*ohnesorg*interpolated_omega*interpolated_dudz - curvature*interpolated_omega)*test(l)*W;
-       residuals[local_eqn] += 3.0*ohnesorg*interpolated_omega*interpolated_dudz*test(l)*W;
-       residuals[local_eqn] += -interpolated_h*body_force*test(l)*W;
+       residuals[local_eqn] += (interpolated_dhdt + interpolated_u*interpolated_omega +
+                                interpolated_h/2.0*interpolated_dudz)*test(l)*W;
 
-/*       residuals[local_eqn] += (interpolated_dudt + interpolated_u*interpolated_dudz)*test(l)*W;
-       residuals[local_eqn] += (-curvature + 3.0*ohnesorg*interpolated_dudz)*dtestdx(l,0)*W;
-       residuals[local_eqn] += (-6.0*ohnesorg*interpolated_omega*interpolated_dudz/interpolated_h - body_force)*test(l)*W;
-*/
        // Calculate the jacobian (currently not implemented)
        //-----------------------
        if(flag)

@@ -336,6 +336,7 @@ public:
  void actions_before_newton_convergence_check()
  {
    Problem_Parameter::Tip_node_pt->x(0) = Problem_Parameter::Tip_position_pt->value(0);
+   Fluid_mesh_pt->node_update();
    Problem_Parameter::Tip_node_pt->set_value(1, Problem_Parameter::Tip_velocity_pt->value(0));
  }
 
@@ -580,6 +581,8 @@ AxisymmetricThinFilmDrippingFaucetProblem<ELEMENT>::AxisymmetricThinFilmDripping
    nod_pt->set_value(1,0.0);
    double dhdz=Problem_Parameter::initial_slope(z);
    nod_pt->set_value(2,dhdz);
+   // Now set the history value of the nodal position
+   time_stepper_pt()->assign_initial_positions_impulsive(nod_pt);
   }
 
  // Complete the setup of the 1D axisymmetric thin film DrippingFaucet problem:
