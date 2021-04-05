@@ -13,3 +13,5 @@
 *.o
 # Ignore all directories
 */*
+# No pdfs
+*.pdf

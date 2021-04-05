@@ -47,159 +47,6 @@ using namespace oomph;
 namespace oomph
 {
 
-//=================================================================
-/// Custom element that allows the handling of external data
-//=================================================================
-template <unsigned NNODE_1D>
-class MyRefinableElement : public 
-  RefineableAxisymmetricThinFilmDrippingFaucetElement<NNODE_1D>
-{
-
-public:
- 
- ///\short Compute the element's residual vector and the Jacobian matrix.
- /// Jacobian is computed by finite-differencing.
- void fill_in_contribution_to_jacobian(Vector<double> &residuals,
-                                       DenseMatrix<double> &jacobian)
-  {
-   //Add the contribution to the residuals
-   this->fill_in_contribution_to_residuals(residuals);
-   
-   //Allocate storage for the full residuals (residuals of entire element)
-   unsigned n_dof = this->ndof();
-   Vector<double> full_residuals(n_dof);
-
-   //Get the residuals for the entire element
-   this->get_residuals(full_residuals);
-
-   //There could be internal data
-   //(finite-difference the lot by default)
-   this->fill_in_jacobian_from_internal_by_fd(full_residuals,jacobian,true);
-
-   //There could also be external data
-   //(finite-difference the lot by default)
-   this->fill_in_jacobian_from_external_by_fd(full_residuals,jacobian,true);
-
-   //There could also be nodal data
-   //(finite-difference the lot by default)
-   this->fill_in_jacobian_from_nodal_by_fd(full_residuals,jacobian);
-  }
-
- inline void update_in_external_fd(const unsigned &i)
-  {
-   //oomph_info << "Aloha!"<<std::endl;
-   if(this->external_data_pt(0) != 0)
-    {
-     // Get the current tip position
-     double z_tip = this->external_data_pt(0)->value(0);
-     // Loop over all nodes
-     unsigned n_node = this->nnode();
-     for(unsigned inod=0; inod<n_node; inod++)
-      {
-       Node* nod_pt = this->node_pt(inod);
-       // Only update the tip node where the height is pinned
-       if(nod_pt->is_pinned(0))
-        {
-         //oomph_info << "Updating position!"<<std::endl;
-         nod_pt->x(0) = z_tip;
-        }
-      }
-    }
-  }
-
- inline void update_before_external_fd()
-  {
-   const unsigned i=0;
-   update_in_external_fd(i);
-  }
-
-};
-
-//====================================================================
-/// Element to constrain the tip position and its velocity.
-//====================================================================
-template<class ELEMENT>
-class DrippingFaucetConstraintElement : public GeneralisedElement
-{
-public:
-
-  DrippingFaucetConstraintElement(const double& z_tip, const Mesh* mesh_pt,
-    Node* tip_node_pt, const double* prescribed_drop_volume_pt)
-  {
-    // Create an internal data object, which is the unknown
-    // position of the drop tip
-    this->add_internal_data(new Data(1),true);
-    this->internal_data_pt(0)->set_value(0,z_tip);
-
-    // Set pointer to the mesh
-    Mesh_pt = mesh_pt;
-    // Set pointer to the tip node
-    Tip_node_pt = tip_node_pt;
-    // Set pointer to prescribed drop volume
-    Prescribed_drop_volume_pt = prescribed_drop_volume_pt;
-
-    // Add external data
-    const unsigned n_node = Mesh_pt->nnode();
-    for (unsigned inod=0; inod < n_node; inod++)
-    {
-      this->add_external_data(Mesh_pt->node_pt(inod), true);
-    }
-  }
-
-  ~DrippingFaucetConstraintElement(){}
-
-  double calculate_drop_volume()
-  {
-    // get the volume from the elements
-    double volume = 0.0;
-    unsigned n_element=Mesh_pt->nelement();
-    for(unsigned el=0; el<n_element; el++)
-    {
-      // Get pointer to element
-      ELEMENT *el_pt = dynamic_cast<ELEMENT*>(Mesh_pt->element_pt(el));
-    
-      // Add its contribution
-      volume += el_pt->compute_physical_size();
-    }
-    return volume;
-  }
-
-  void fill_in_contribution_to_residuals(Vector<double>& residuals)
-  {
-    // Get the current volume of the drop
-    const double current_drop_volume = calculate_drop_volume();
-
-    // Equation for tip position
-    const int z_tip_eqn=internal_local_eqn(0,0);
-
-    if(z_tip_eqn >= 0)
-    {
-      // Get the residuals
-      residuals[z_tip_eqn] += current_drop_volume - *Prescribed_drop_volume_pt;
-    }
-  }
-
- inline void update_in_internal_fd(const unsigned &i)
-  {
-    // Get the current tip position
-    double z_tip = this->internal_data_pt(0)->value(0);
-    //oomph_info << "Updating position!"<<std::endl;
-    Tip_node_pt->x(0) = z_tip;
-  }
-
- inline void update_before_internal_fd()
-  {
-   const unsigned i=0;
-   update_in_internal_fd(i);
-  }
-
-private:
-
-  const Mesh* Mesh_pt;
-  Node* Tip_node_pt;
-  const double* Prescribed_drop_volume_pt;
-};
-
 //==start_of_namespace================================================
 /// Namespace for problem parameters
 //====================================================================
@@ -212,16 +59,6 @@ namespace Problem_Parameter
 
  /// Faucet Radius
  double R = 1.0;
-
- /// Initial tip position
- double Z_tip = 1.0;
- Data* Tip_position_pt = 0;
-
- /// Pointer to the tip node
- Node* Tip_node_pt = 0;
-
- /// Magnitude of the slope at the tip
- double Slope_magn = 10000.0;
 
  /// Ohnesorg number
  double Oh = 1.0;
@@ -240,32 +77,14 @@ namespace Problem_Parameter
  // The initial profile h(z)
  double initial_profile(const double& z)
   {
-   return R*sqrt(1.0-(z/Z_tip)*(z/Z_tip));
+   return R;
   }
 
  // The initial slope dhdz(z)
  double initial_slope(const double& z)
   {
-    if (std::fabs(z - Z_tip) > 1.0e-8)
-    {
-      return -R/(Z_tip*Z_tip*sqrt(1.0-(z/Z_tip)*(z/Z_tip)))*z;
-    }
-    else
-    {
-      return -Slope_magn;
-    }
+    return 0.0;
   }
-
-  /// Initial drop volume
-  double V_0 = 0.0;
-
-  /// Function for the current volume
-  double drop_volume(const double& t)
-  {
-    return V_0 + MathematicalConstants::Pi*R*R*sqrt(We)*t;
-  }
-
-  double Prescribed_drop_volume = 0.0;
 
   /// Trace file
   ofstream Trace_file;
@@ -292,31 +111,11 @@ public:
  /// Destructor (empty)
  ~AxisymmetricThinFilmDrippingFaucetProblem()
   {
-    delete Constraint_element_pt->internal_data_pt(0);
-    delete Constraint_element_pt;
-    delete Constraint_mesh_pt;
-
     delete Fluid_mesh_pt->spatial_error_estimator_pt();
     delete Fluid_mesh_pt;
 
     delete this->time_stepper_pt();
   }
-
- /// Actions before Newton convergence check
- void actions_before_newton_convergence_check()
- {
-   Problem_Parameter::Tip_node_pt->x(0) = Problem_Parameter::Tip_position_pt->value(0);
-   Fluid_mesh_pt->node_update();
- }
-
- /// \short Actions before implicit timestep: Update the target volume
- void actions_before_implicit_timestep()
- {
-   // Current time
-   const double t = time_stepper_pt()->time();
-
-   Problem_Parameter::Prescribed_drop_volume = Problem_Parameter::drop_volume(t);
- }
 
  /// Update the problem specs before solve (empty)
  void actions_before_newton_solve(){}
@@ -355,44 +154,6 @@ public:
  /// \short Doc the solution
  void doc_solution();
 
- /// Set the tip node
- void set_tip_node_element_pt()
- {
-  Problem_Parameter::Tip_node_pt = dynamic_cast<Node*>(Fluid_mesh_pt->boundary_node_pt(1,0));
-
-  unsigned n_element = Fluid_mesh_pt->nelement();
-  for(unsigned i=0;i<n_element;i++)
-  {
-    // Upcast from GeneralisedElement to the present element
-    ELEMENT *elem_pt = dynamic_cast<ELEMENT*>(Fluid_mesh_pt->element_pt(i));
-    // Find the element that contains the tip node
-    // Loop over all nodes
-    unsigned n_node = elem_pt->nnode();
-    for(unsigned inod=0; inod<n_node; inod++)
-    {
-      Node* nod_pt = elem_pt->node_pt(inod);
-      if (nod_pt == Problem_Parameter::Tip_node_pt)
-      {
-        Tip_element_pt = elem_pt;
-      }
-    }
-  }
- }
-
- void actions_before_adapt()
- {
-   delete_constraint_element();
-   rebuild_global_mesh();
- }
-
- void actions_after_adapt()
- {
-   set_tip_node_element_pt();
-   create_constraint_element();
-   complete_problem_setup();
-   rebuild_global_mesh();
- }
-
  void complete_problem_setup()
  {
   // Set the boundary conditions for this problem: By default, all nodal
@@ -402,12 +163,13 @@ public:
   Fluid_mesh_pt->boundary_node_pt(0,0)->set_value(0, Problem_Parameter::R);
   Fluid_mesh_pt->boundary_node_pt(0,0)->pin(1);
   Fluid_mesh_pt->boundary_node_pt(0,0)->set_value(1, sqrt(Problem_Parameter::We));
+  //Fluid_mesh_pt->boundary_node_pt(0,0)->pin(2);
+  //Fluid_mesh_pt->boundary_node_pt(0,0)->set_value(2, 0.0);
 
-  Problem_Parameter::Tip_node_pt->x(0) = Problem_Parameter::Tip_position_pt->value(0);
-  Problem_Parameter::Tip_node_pt->pin(0);
-  Problem_Parameter::Tip_node_pt->set_value(0, 0.0);
-  //Problem_Parameter::Tip_node_pt->pin(2);
-  //Problem_Parameter::Tip_node_pt->set_value(2, -Problem_Parameter::Slope_magn);
+  Fluid_mesh_pt->boundary_node_pt(1,0)->pin(0);
+  Fluid_mesh_pt->boundary_node_pt(1,0)->set_value(0, Problem_Parameter::R);
+  //Fluid_mesh_pt->boundary_node_pt(1,0)->pin(2);
+  //Fluid_mesh_pt->boundary_node_pt(1,0)->set_value(2, 0.0);
 
   // Complete the setup of the 1D axisymmetric thin film DrippingFaucet problem:
 
@@ -425,62 +187,12 @@ public:
     //Set the body force function pointer
     elem_pt->body_force_fct_pt() = Body_force_fct_pt;
   }
-  // Add tip position and velocity as external data to the tip element
-  Tip_element_pt->add_external_data(Problem_Parameter::Tip_position_pt);
  }
 
 private:
 
- /// Compute the volume of the drop
- double calculate_drop_volume()
- {
-  double volume=0.0;
-  unsigned n_element = Fluid_mesh_pt->nelement();
-  for(unsigned i=0;i<n_element;i++)
-  {
-    // Upcast from GeneralisedElement to the present element
-    ELEMENT *elem_pt = dynamic_cast<ELEMENT*>(Fluid_mesh_pt->element_pt(i));
-
-    volume += elem_pt->compute_physical_size();
-  }
-  return volume;
- }
-
- /// Create constraint element
- void create_constraint_element()
- {
-    Constraint_element_pt = new DrippingFaucetConstraintElement<ELEMENT>(Problem_Parameter::Z_tip,
-      Fluid_mesh_pt, Problem_Parameter::Tip_node_pt, &Problem_Parameter::Prescribed_drop_volume);
-    // Set pointer to position and velocity data to allow external access
-    Problem_Parameter::Tip_position_pt = Constraint_element_pt->internal_data_pt(0);
-    // Add element to mesh
-    Constraint_mesh_pt->add_element_pt(Constraint_element_pt);
- }
-
- /// Delete constraint element
- void delete_constraint_element()
- {
-   // Back up the position and velocity of the tip
-   Problem_Parameter::Z_tip = Problem_Parameter::Tip_position_pt->value(0);
-   // Remove the external data from the tip element
-   Tip_element_pt->flush_external_data();
-
-   delete Constraint_mesh_pt->element_pt(0);
-
-   Constraint_mesh_pt->flush_element_and_node_storage();
- }
-
  /// Mesh pointer
  RefineableOneDMesh<ELEMENT>* Fluid_mesh_pt;
-
- /// Constraint element
- DrippingFaucetConstraintElement<ELEMENT>* Constraint_element_pt;
-
- /// Constraint mesh
- Mesh* Constraint_mesh_pt;
-
- /// Pointer to the element at the tip
- ELEMENT* Tip_element_pt;
 
  /// Pointer to body force function
  AxisymmetricThinFilmDrippingFaucetEquations::AxisymmetricThinFilmDrippingFaucetBodyForceFctPt Body_force_fct_pt;
@@ -503,7 +215,7 @@ AxisymmetricThinFilmDrippingFaucetProblem<ELEMENT>::AxisymmetricThinFilmDripping
  // Allocate the timestepper -- this constructs the Problem's 
  // time object with a sufficient amount of storage to store the
  // previous timsteps.
- this->add_time_stepper_pt(new BDF<2>(true));
+ this->add_time_stepper_pt(new BDF<1>(true));
  oomph_info << "Using BDF2\n";
 
  //linear_solver_pt()=new FD_LU;
@@ -513,7 +225,7 @@ AxisymmetricThinFilmDrippingFaucetProblem<ELEMENT>::AxisymmetricThinFilmDripping
  //enable_globally_convergent_newton_method();
 
  // Build mesh and store pointer in Problem
- Fluid_mesh_pt = new RefineableOneDMesh<ELEMENT>(n_element,Problem_Parameter::Z_tip,
+ Fluid_mesh_pt = new RefineableOneDMesh<ELEMENT>(n_element,1.0,
 						 this->time_stepper_pt());
 
  // Create/set error estimator
@@ -522,15 +234,6 @@ AxisymmetricThinFilmDrippingFaucetProblem<ELEMENT>::AxisymmetricThinFilmDripping
  // Set targets for spatial adaptivity
  Fluid_mesh_pt->max_permitted_error()=5.0e-6;
  Fluid_mesh_pt->min_permitted_error()=1.0e-6;
-
- // Set the tip node and element
- set_tip_node_element_pt();
-
- /// Create mesh for contraints
- Constraint_mesh_pt = new Mesh();
-
- /// Create constraint element
- create_constraint_element();
 
  // Set the initial condition
  unsigned n_node = Fluid_mesh_pt->nnode();
@@ -550,13 +253,9 @@ AxisymmetricThinFilmDrippingFaucetProblem<ELEMENT>::AxisymmetricThinFilmDripping
 
  // Complete the setup of the 1D axisymmetric thin film DrippingFaucet problem:
  complete_problem_setup();
-  // Set the initial drop volume
-  Problem_Parameter::V_0 = calculate_drop_volume();
-  Problem_Parameter::Prescribed_drop_volume = Problem_Parameter::V_0;
 
  // Combine meshes
  add_sub_mesh(Fluid_mesh_pt);
- add_sub_mesh(Constraint_mesh_pt);
  build_global_mesh();
 
  // Setup equation numbering scheme
@@ -590,9 +289,7 @@ void AxisymmetricThinFilmDrippingFaucetProblem<ELEMENT>::doc_solution()
  // Write trace file
  Problem_Parameter::Trace_file
    << this->time_pt()->time() << " "
-   << Problem_Parameter::Tip_node_pt->x(0) << " "
-   << Problem_Parameter::Tip_node_pt->value(1) << " "
-   << calculate_drop_volume() << " "
+   << Fluid_mesh_pt->boundary_node_pt(1,0)->value(1) << " "
    << Fluid_mesh_pt->nelement() << " "
    << Problem_Parameter::Doc_info.number() << " "
    << std::endl;
@@ -667,7 +364,7 @@ int main(int argc, char **argv)
 
  // Set up the problem: 
  // Solve a 1D axisymmetric thin film DrippingFaucet problem using a body force
- AxisymmetricThinFilmDrippingFaucetProblem<MyRefinableElement<4> >
+ AxisymmetricThinFilmDrippingFaucetProblem<RefineableAxisymmetricThinFilmDrippingFaucetElement<2> >
    //Element type as template parameter
    problem(n_element,Problem_Parameter::body_force_function);
 
@@ -688,11 +385,9 @@ int main(int argc, char **argv)
  Problem_Parameter::Trace_file  
   << "VARIABLES="
   << "\"time\", "  // 1
-  << "\"z_tip\"," // 2
-  << "\"u_tip\"," // 3
-  << "\"volume\"," // 4
-  << "\"n_element\"," // 5
-  << "\"doc number\"" // 6
+  << "\"u_out\"," // 2
+  << "\"n_element\"," // 4
+  << "\"doc number\"" // 5
   << std::endl; 
 
  // Output directory

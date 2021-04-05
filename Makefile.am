@@ -1,7 +1,8 @@
 
 # Name of executables: The prefix "noinst" means the executables don't
 # have to be installed anywhere.
-noinst_PROGRAMS= axisym_thinfilm_dripping_faucet
+noinst_PROGRAMS= axisym_thinfilm_dripping_faucet \
+                 axisym_thinfilm_filament
 
 #----------------------------------------------------------------------
 
@@ -10,6 +11,14 @@ axisym_thinfilm_dripping_faucet_SOURCES = axisym_thinfilm_dripping_faucet.cc
 # Required libraries:
 # $(FLIBS) is included in case the solver involves fortran sources.
 axisym_thinfilm_dripping_faucet_LDADD = -L@libdir@ -lgeneric $(EXTERNAL_LIBS) $(FLIBS)
+
+#----------------------------------------------------------------------
+
+# Sources for executable
+axisym_thinfilm_filament_SOURCES = axisym_thinfilm_filament.cc
+# Required libraries:
+# $(FLIBS) is included in case the solver involves fortran sources.
+axisym_thinfilm_filament_LDADD = -L@libdir@ -lgeneric $(EXTERNAL_LIBS) $(FLIBS)
 
 #---------------------------------------------------------------------------
 
